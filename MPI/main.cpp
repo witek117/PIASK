@@ -1,65 +1,65 @@
 #include <mpi.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <limits.h>
-#include <math.h>
-#define PRECISION 0.01
-#define POINTS_NUMBER (4.0 / PRECISION)
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
 
-void compute(double* sub_domain, int sub_domain_length, double* local_min){
-    double y;
-    double y_min = LLONG_MAX;
-    double x = 0;
-    double x_min = 0;
-    int i = 0;
-
-    for(i = 0; i < sub_domain_length; i++){
-        x = sub_domain[i];
-        y = pow((x-5), 3.0) - pow((x - 4), 2.0) + 1;
-        if (y_min > y){
-            y_min = y;
-            x_min = x;
-        }
-    }
-
-    *local_min = y_min;
-
-    // printf("minimum point: (x:%f, y:%f) in <%.2f, %.2f>\n", x_min, y_min, sub_domain[0], sub_domain[sub_domain_length - 1]);
+double polynominal(double x){
+    return 5*pow(x,4) + 4*pow(x,3) + x - 10*pow(x,2);
 }
 
-void print_domain(double* domain, int length){
-    int i = 0;
-    for(i = 0; i < length; i++){
+void print_domain(const double* domain, int length){
+    printf("Domain:\n");
+    for(int i = 0; i < length ; i++){
         printf("%d: %.3f\n", i , *domain);
         domain++;
     }
 }
 
-double * get_full_domain(int* length){
-    int i = 0;
+double calculateTrapezoidField(double a, double b, double h) {
+    return ((a + b) * h / 2);
+}
 
-    *length = POINTS_NUMBER;
-    double* domain = (double*)malloc((*length) * sizeof(double));
+void compute(const double* sub_domain, int sub_domain_length, void* params, double* local_integral){
+    auto *dx = reinterpret_cast<double*>(params);
+    double sum = 0.0f;
+    double y1, y2;
+    y1 = polynominal(sub_domain[0]);
 
-    domain[0] = 4.0;
-    for(i = 1; i < (*length); i++){
-        domain[i] = domain[i-1] + PRECISION;
+    for(int i = 1; i < sub_domain_length; i++){
+        y2 = polynominal(sub_domain[i]);
+        sum += calculateTrapezoidField(y1, y2, *dx);
+        y1 = y2;
+    }
+    *local_integral = sum;
+}
+
+double* get_full_domain(double startValue, double stopValue, double dx, int* length){
+    int len =  (int)((stopValue - startValue) / dx) + 1;
+    (*length) = len;
+    auto* domain = (double*)malloc(len * sizeof(double));
+
+    double value = startValue;
+
+    for(int i = 0; i < len; i++) {
+        domain[i] = value;
+        value += dx;
     }
 
-    // printf("%.3f \n", domain[0]);
     return domain;
-    // print_domain(*domain - (*length), *length);
 }
 
 
 int main(int argc, char** argv) {
+    double dx = 0.001;
+    double start = 0;
+    double stop = 2;
     int myrank;
     int size;
     int root = 1;
     int full_domain_length;
     int sub_domain_length;
-    double global_min;
-    double local_min;
+    double global_integral;
+    double local_integral;
 
     double* full_domain;
     double* sub_domain;
@@ -71,36 +71,46 @@ int main(int argc, char** argv) {
     root = 0;
 
     if (myrank == root) {
-        // full_domain = (double*)malloc(400 * sizeof(double));
-        full_domain = get_full_domain(&full_domain_length);
-        // printf("%.3f \n", full_domain[399]);
-
-        // print_domain(full_domain, full_domain_length);
+        full_domain = get_full_domain(start, stop, dx ,&full_domain_length);
     }
 
     MPI_Bcast(&full_domain_length, 1, MPI_INT, root, MPI_COMM_WORLD);
 
     sub_domain_length = full_domain_length / size;
 
-    // printf("Sub_domain_len %d    full %d\n", sub_domain_length, full_domain_length);
-
     sub_domain = (double*) malloc (sub_domain_length * sizeof(double));
 
     MPI_Scatter(full_domain, sub_domain_length, MPI_DOUBLE, sub_domain, sub_domain_length, MPI_DOUBLE, root, MPI_COMM_WORLD);
 
-    compute(sub_domain, sub_domain_length, &local_min);
+    compute(sub_domain, sub_domain_length, &dx, &local_integral);
 
-    MPI_Reduce(&local_min, &global_min, 1, MPI_DOUBLE, MPI_MIN, root, MPI_COMM_WORLD);
-
-    //MPI_Gather(sub_domain, sub_domain_length, MPI_DOUBLE, full_domain, full_domain_length, MPI_DOUBLE, root, MPI_COMM_WORLD);
+    MPI_Reduce(&local_integral, &global_integral, 1, MPI_DOUBLE, MPI_SUM, root, MPI_COMM_WORLD);
 
     MPI_Finalize();
 
     if (myrank == root) {
-        printf("Global min: %.3f\n", global_min);
+        // sum integral between sub domains
+        for(int i =0; i < (size - 1); i++) {
+            int index = (i * sub_domain_length) + sub_domain_length;
+            global_integral += calculateTrapezoidField(polynominal(full_domain[index - 1]), polynominal(full_domain[index]), dx);
+        }
+
+        int rest = full_domain_length % size;
+        int startRestIndex = (sub_domain_length * size) - 1;
+        int stopRestIndex = startRestIndex + rest;
+
+        double y1 = polynominal(full_domain[startRestIndex]);
+        double y2;
+
+        // sum integral after last sub domain, if exists
+        for(int i = startRestIndex; i < stopRestIndex; i++) {
+            y2 = polynominal(full_domain[i+1]);
+            global_integral += calculateTrapezoidField(y1, y2, dx);
+            y1 = y2;
+        }
+
+        printf("Global integral: %.3f\n", global_integral);
     }
-
-
 
     return 0;
 }
