@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
             y1 = y2;
         }
 
-        printf("Global integral: %.3f\n", global_integral);
+        printf("Integral: %.3f\n", global_integral);
     }
 
     return 0;
