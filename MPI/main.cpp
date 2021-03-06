@@ -2,6 +2,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include "sysinfoapi.h"
+
+SYSTEMTIME time;
 
 double polynominal(double x){
     return 5*pow(x,4) + 4*pow(x,3) + x - 10*pow(x,2);
@@ -52,7 +55,7 @@ double* get_full_domain(double startValue, double stopValue, double dx, int* len
 int main(int argc, char** argv) {
     double dx = 0.001;
     double start = 0;
-    double stop = 2;
+    double stop = 100;
     int myrank;
     int size;
     int root = 1;
@@ -63,6 +66,7 @@ int main(int argc, char** argv) {
 
     double* full_domain;
     double* sub_domain;
+    LONG start_time_ms, stop_time_ms;
 
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
@@ -71,6 +75,8 @@ int main(int argc, char** argv) {
     root = 0;
 
     if (myrank == root) {
+        GetLocalTime(&time);
+        start_time_ms = (time.wSecond * 1000) + time.wMilliseconds;
         full_domain = get_full_domain(start, stop, dx ,&full_domain_length);
     }
 
@@ -109,7 +115,13 @@ int main(int argc, char** argv) {
             y1 = y2;
         }
 
+        printf("Length in: %d\n", full_domain_length);
+
         printf("Integral: %.3f\n", global_integral);
+
+        GetLocalTime(&time);
+        stop_time_ms = (time.wSecond * 1000) + time.wMilliseconds;
+        printf("Done in: %d ms\n", (int)(stop_time_ms - start_time_ms));
     }
 
     return 0;

@@ -1,3 +1,4 @@
+#include <sys/timeb.h>
 #include <cmath>
 #include <cstdio>
 
@@ -7,19 +8,22 @@ __device__ double polynominal(double x){
     return 5*pow(x,4) + 4*pow(x,3) + x - 10*pow(x,2);
 }
 
-__global__ void  calculate(double* result, double start, double dx, long long int length){
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;;
+__global__ void  calculate(double* result, double start, double dx, long long int length) {
+    int index = blockIdx.x * blockDim.x + threadIdx.x;;
 
-    double x = start + (float(idx) * dx);
+    double x = start + (double(index) * dx);
 
-    if(idx < length){
-        result[idx] = (polynominal(x) + polynominal(x + dx)) * dx / 2.0f;
+    if (index < (length)) {
+        result[index] = (polynominal(x) + polynominal(x + dx)) * dx / 2.0f;
     }
 }
 
 __host__ double integral(double start, double stop, double dx) {
     double sum = 0;
-    int length = (int)((stop - start) / dx);
+
+    int length = (int)((stop - start) / dx) ;
+    printf("Length in: %d\n", length);
+
     int size = length * sizeof(double);
 
     double* hostData = (double*)malloc(size);
@@ -48,7 +52,17 @@ __host__ double integral(double start, double stop, double dx) {
 
 
 int main() {
-    double result = integral(0, 2, 0.001);
+    struct timeb startTIme{}, stopTime{};
 
-    printf("%f\n", result);
+    ftime(&startTIme);
+
+    double result = integral(0, 100, 0.001);
+
+    ftime(&stopTime);
+
+    auto time = stopTime.time - startTIme.time;
+
+    printf("Integral: %.3f\n", result);
+
+    printf("Done in: %d ms\n", time);
 }
